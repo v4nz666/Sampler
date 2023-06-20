@@ -15,12 +15,14 @@ DaisySeed hw;
 
 
 #define SAMPLE_RATE 48000
+#define BUFFER_LENGTH 8
+
 
 // sampler buffer
-#define BUFFER_SIZE (SAMPLE_RATE * 60) // 60 secs; 48k * 2 * 4 = 384k/s 
+#define BUFFER_SIZE (SAMPLE_RATE * BUFFER_LENGTH)
 
-float DSY_SDRAM_BSS sBufferR[BUFFER_SIZE];
-float DSY_SDRAM_BSS sBufferL[BUFFER_SIZE];
+float DSY_SDRAM_BSS sBuffer[2][BUFFER_SIZE];
+
 
 // index into buffer, in 28.4 fixed point notation
 // 	integer portion = playIndex >> 4;
@@ -28,45 +30,58 @@ float DSY_SDRAM_BSS sBufferL[BUFFER_SIZE];
 uint32_t playIndex = 0;
 float playSpeed = 0.5;
 
-
-
 uint32_t recordIndex = 0;
-uint32_t recordLength = BUFFER_SIZE;
+uint32_t loopLength = 0;
 
-bool recordingActive = true;
+bool loopingActive  = false;
+bool recordingActive = false;
 
 
 
-
-daisysp::Oscillator osc;
-
+bool reachedEnd = false;
 bool ledState = true;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
 {
-	for (size_t i = 0; i < size; i++) {
+	float recL, recR = 0.0f;
+	float loopL, loopR = 0.0f;
+	float loopDecay = 1.0f;
+
+	for ( size_t i = 0; i < size; i++ ) {
 		
 		if ( recordingActive ) {
-			
-			sBufferL[recordIndex] = in[0][i];
-			sBufferR[recordIndex] = in[1][i];
+			recL = in[0][i];
+			recR = in[1][i];
+
+			sBuffer[L][recordIndex] = recL;
+			sBuffer[R][recordIndex] = recR;
+
 			recordIndex++;
-			if ( recordIndex >= recordLength ) {
-				recordingActive = false;
-				recordIndex = 0;
+			recordIndex %= BUFFER_SIZE;
+			loopDecay = 0.9f;
+
+			// If we're recording the first loop into the buffer, keep track of the length as we record
+			if ( ! loopingActive ) {
+				// And if we hit the end of the buffer, start looping, and cap our loopLength
+				if ( ++loopLength >= BUFFER_SIZE ) {
+					loopLength = BUFFER_SIZE;
+					stopRecording();
+					reachedEnd = true;
+				}
 				
-				#ifdef DEBUG
-				hw.PrintLine("Recording stopped.");
-				#endif
 			}
-			out[L][i] = 0.f;
-			out[R][i] = 0.f;
-		} else {
-			float sample = readFromBuffer();
-			out[L][i] = sample;
-			out[R][i] = sample;
 		}
 
+		if ( loopingActive ) {	
+			loopL = readFromBuffer(L);
+			loopR = readFromBuffer(R);
+			incrementPlayHead();
+		}
+		
+		out[L][i] = recL + (loopL * loopDecay);
+		out[R][i] = recR + (loopR * loopDecay);
+
+		
 		
 	}
 }
@@ -76,6 +91,8 @@ int main(void)
 	setup();
 	
 	hw.StartAudio(AudioCallback);
+	startRecording();
+	
 	while(1) {
 		float pot = hw.adc.GetFloat(0);
 		if ( pot < 0.01 ) {
@@ -91,43 +108,56 @@ int main(void)
 		} else {
 			playSpeed = 4;
 		}
+
+		if ( reachedEnd ) {
+			flashLed();
+			reachedEnd = false;
+		}
+
 		hw.SetLed(recordingActive);
 	}
 }
 
 void setup(void) {
 	hw.Init();
-	hw.SetAudioBlockSize(4); // number of samples handled per callback
+	hw.SetAudioBlockSize(4);
 	hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 	
 	#ifdef DEBUG
 	hw.StartLog(true);
 	hw.PrintLine("Log initialized");
 	#endif
-
 	
 	AdcChannelConfig adcConfig;
 	adcConfig.InitSingle(hw.GetPin(A0));
     hw.adc.Init(&adcConfig, 1);
     hw.adc.Start();
 
-
-
-
-
-	// osc.Init(hw.AudioSampleRate());
-	// osc.SetWaveform(osc.WAVE_POLYBLEP_SQUARE);	
-	// osc.SetFreq(440);
+	reset();
 	
-	// for ( int i = 0; i < BUFFER_SIZE; i++ ) {
-	// 	float smp = osc.Process();
-	// 	sBufferR[i] = smp;
-	// 	sBufferL[i] = smp;
-	// }
 }
 
+void reset(void) {
+	clearBuffer();
+	playIndex = 0;
+	recordIndex = 0;
+	loopLength = 0;
+	loopingActive = false;
+	recordingActive = false;
+}
 
-float readFromBuffer(void) {
+void clearBuffer(void) {
+	#ifdef DEBUG
+	hw.StartLog(true);
+	hw.PrintLine("Clearing buffer...");
+	#endif
+	for ( int i = 0; i < BUFFER_SIZE; i++ ) {
+		sBuffer[L][i] = 0.f;
+		sBuffer[R][i] = 0.f;
+	}
+}
+
+float readFromBuffer(int ch) {
 
 	int32_t playSpeedInt   = static_cast<int32_t>(playSpeed);
 	float   playSpeedFraction = playSpeed - static_cast<float>(playSpeedInt);
@@ -135,10 +165,10 @@ float readFromBuffer(void) {
 	float index = static_cast<float>((playIndex >> 4) + (playIndex & 0xf) / 16.0f);
 
 	int32_t     t     = static_cast<int>(index + playSpeedInt + BUFFER_SIZE);
-	const float xm1   = sBufferL[(t - 1) % BUFFER_SIZE];
-	const float x0    = sBufferL[(t) % BUFFER_SIZE];
-	const float x1    = sBufferL[(t + 1) % BUFFER_SIZE];
-	const float x2    = sBufferL[(t + 2) % BUFFER_SIZE];
+	const float xm1   = sBuffer[ch][(t - 1) % BUFFER_SIZE];
+	const float x0    = sBuffer[ch][(t) % BUFFER_SIZE];
+	const float x1    = sBuffer[ch][(t + 1) % BUFFER_SIZE];
+	const float x2    = sBuffer[ch][(t + 2) % BUFFER_SIZE];
 	const float c     = (x1 - xm1) * 0.5f;
 	const float v     = x0 - x1;
 	const float w     = c + v;
@@ -146,8 +176,50 @@ float readFromBuffer(void) {
 	const float b_neg = w + a;
 	const float f     = playSpeedFraction;
 
-	playIndex += static_cast<int>(playSpeed * 16);
-	playIndex %= BUFFER_SIZE * 16;
-
 	return (((a * f) - b_neg) * f + c) * f + x0;
+}
+
+void incrementPlayHead() {
+	playIndex += static_cast<int>(playSpeed * 16);
+
+	size_t max = loopLength << 4;
+	if ( playIndex > max ) {
+		playIndex -= max;
+		reachedEnd = true;
+	}
+	playIndex %= (loopLength << 4);
+}
+
+void startRecording() {
+	recordingActive = true;
+	// Start recording at the last integer playIndex we crossed
+	recordIndex = playIndex >> 4;
+	if ( playSpeed < 0 ) {
+		// If we're playing in reverse, we need to round the other way
+		recordIndex += 1;
+	}
+}
+
+void stopRecording() {
+	recordingActive = false;
+	
+	if ( ! loopingActive ) {
+		loopingActive = true;
+	}
+}
+
+
+void flashLed() {
+	hw.SetLed(true);
+	System::Delay(200);
+	hw.SetLed(false);
+	System::Delay(200);
+	hw.SetLed(true);
+	System::Delay(200);
+	hw.SetLed(false);
+	System::Delay(200);
+	hw.SetLed(true);
+	System::Delay(200);
+	hw.SetLed(false);
+	System::Delay(200);
 }

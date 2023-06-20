@@ -5,4 +5,15 @@
 
 void setup(void);
 
-float readFromBuffer(void);
+void reset(void);
+
+void startRecording(void);
+void stopRecording(void);
+
+void incrementPlayHead(void);
+
+void clearBuffer(void);
+float readFromBuffer(int);
+
+
+void flashLed(void);
