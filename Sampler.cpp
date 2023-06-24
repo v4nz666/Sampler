@@ -11,9 +11,9 @@ DaisySeed hw;
 
 #define L 0
 #define R 1
-#define IN_SPEED_1 D15
+#define IN_SPEED_1 A10
 
-#define LED_SPEED_1 D16
+#define LED_SPEED_1 D30
 
 
 #define SAMPLE_RATE 48000
@@ -222,6 +222,9 @@ void incrementPlayHead() {
 	size_t max = loopLength << 4;
 	if ( playIndex > max ) {
 		playIndex -= max;
+		reachedEnd = true;
+	} else if ( playIndex < 0 ) {
+		playIndex += max;
 		reachedEnd = true;
 	}
 	//playIndex %= (loopLength << 4);
