@@ -100,39 +100,53 @@ int main(void)
 	System::Delay(4000);
 	stopRecording();
 	while(1) {
-		float pot = hw.adc.GetFloat(0);
+		float pot = hw.adc.GetFloat(0) - 0.5;
 		//playSpeed = pot * 8 - 4;
-		playSpeed = pot * 4 - 2;
+		// playSpeed = pot * 4 - 2;
+		
+		bool negative = false;
+		
+		if ( pot < 0 ) {
+			negative = true;
+			pot = abs(pot);
+		}
+		pot *= 8;
+		playSpeed = (pow(2, pot) - 1) / 7.5;
+
+		if ( negative ) {
+			playSpeed *= -1;
+		}
+
 		bool ledState = false;
 
 		if ( playSpeed <= -3.95 ) { // Not in use
 			playSpeed = -4.f;
 			ledState = true;
-		} else if ( playSpeed >= -2.05 && playSpeed <= -1.95 ) {
+		} else if ( playSpeed >= -2.1 && playSpeed <= -1.9 ) {
 			playSpeed = -2.f;
 			ledState = true;
 		} else if ( playSpeed >= -1.05 && playSpeed <= -0.95 ) {
 			playSpeed = -1.f;
 			ledState = true;
-		} else if ( playSpeed >= -0.55 && playSpeed <= -0.45 ) {
+		} else if ( playSpeed >= -0.525 && playSpeed <= -0.475 ) {
 			playSpeed = -0.5f;
 			ledState = true;
-		} else if ( playSpeed >= -0.275 && playSpeed <= -0.225 ) {
+		} else if ( playSpeed >= -0.2625 && playSpeed <= -0.2375 ) {
 			playSpeed = -0.25;
 			ledState = true;
-		} else if ( playSpeed >= -0.05 && playSpeed <= 0.05 ) {
+		} else if ( playSpeed >= -0.025 && playSpeed <= 0.025 ) {
 			playSpeed = 0;
 			ledState = true;
-		} else if ( playSpeed >= 0.225 && playSpeed <= 0.275 ) {
+		} else if ( playSpeed >= 0.2735 && playSpeed <= 0.2625 ) {
 			playSpeed = 0.25f;
 			ledState = true;
-		} else if ( playSpeed >= 0.45 && playSpeed <= 0.55 ) {
+		} else if ( playSpeed >= 0.475 && playSpeed <= 0.525 ) {
 			playSpeed = 0.5f;
 			ledState = true;
 		} else if ( playSpeed >= 0.95 && playSpeed <= 1.05 ) {
 			playSpeed = 1.f;
 			ledState = true;
-		} else if ( playSpeed >= 1.95 && playSpeed <= 2.05 ) {
+		} else if ( playSpeed >= 1.9 && playSpeed <= 2.0 ) {
 			playSpeed = 2.f;
 			ledState = true;
 		} else if ( playSpeed >= 3.95) { // Not in use
