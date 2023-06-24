@@ -101,10 +101,11 @@ int main(void)
 	stopRecording();
 	while(1) {
 		float pot = hw.adc.GetFloat(0);
-		playSpeed = pot * 8 - 4;
+		//playSpeed = pot * 8 - 4;
+		playSpeed = pot * 4 - 2;
 		bool ledState = false;
 
-		if ( playSpeed <= -3.95 ) {
+		if ( playSpeed <= -3.95 ) { // Not in use
 			playSpeed = -4.f;
 			ledState = true;
 		} else if ( playSpeed >= -2.05 && playSpeed <= -1.95 ) {
@@ -113,8 +114,20 @@ int main(void)
 		} else if ( playSpeed >= -1.05 && playSpeed <= -0.95 ) {
 			playSpeed = -1.f;
 			ledState = true;
+		} else if ( playSpeed >= -0.55 && playSpeed <= -0.45 ) {
+			playSpeed = -0.5f;
+			ledState = true;
+		} else if ( playSpeed >= -0.275 && playSpeed <= -0.225 ) {
+			playSpeed = -0.25;
+			ledState = true;
 		} else if ( playSpeed >= -0.05 && playSpeed <= 0.05 ) {
 			playSpeed = 0;
+			ledState = true;
+		} else if ( playSpeed >= 0.225 && playSpeed <= 0.275 ) {
+			playSpeed = 0.25f;
+			ledState = true;
+		} else if ( playSpeed >= 0.45 && playSpeed <= 0.55 ) {
+			playSpeed = 0.5f;
 			ledState = true;
 		} else if ( playSpeed >= 0.95 && playSpeed <= 1.05 ) {
 			playSpeed = 1.f;
@@ -122,7 +135,7 @@ int main(void)
 		} else if ( playSpeed >= 1.95 && playSpeed <= 2.05 ) {
 			playSpeed = 2.f;
 			ledState = true;
-		} else if ( playSpeed >= 3.95) {
+		} else if ( playSpeed >= 3.95) { // Not in use
 			playSpeed = 4.f;
 			ledState = true;
 		}
