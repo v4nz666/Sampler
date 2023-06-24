@@ -4,18 +4,20 @@
 #include "Sampler.h"
 
 using namespace daisy;
+using namespace daisy::seed;
 using namespace daisysp;
 
 DaisySeed hw;
 
 #define L 0
 #define R 1
-#define A0 15
+#define IN_SPEED_1 D15
 
+#define LED_SPEED_1 D16
 
 
 #define SAMPLE_RATE 48000
-#define BUFFER_LENGTH 8
+#define BUFFER_LENGTH 16
 
 
 // sampler buffer
@@ -28,7 +30,7 @@ float DSY_SDRAM_BSS sBuffer[2][BUFFER_SIZE];
 // 	integer portion = playIndex >> 4;
 // 	decimal portion = (playIndex & 0xf) / 16.0f;
 uint32_t playIndex = 0;
-float playSpeed = 0.5;
+float playSpeed = 1.0f;
 
 uint32_t recordIndex = 0;
 uint32_t loopLength = 0;
@@ -36,6 +38,11 @@ uint32_t loopLength = 0;
 bool loopingActive  = false;
 bool recordingActive = false;
 
+float loopDecay = 1.0f;
+
+
+GPIO led_speed_1;
+	
 
 
 bool reachedEnd = false;
@@ -43,10 +50,11 @@ bool ledState = true;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
 {
-	float recL, recR = 0.0f;
-	float loopL, loopR = 0.0f;
-	float loopDecay = 1.0f;
-
+	float recL = 0.0f,
+		  recR = 0.0f,
+		  loopL = 0.0f,
+		  loopR = 0.0f;
+	
 	for ( size_t i = 0; i < size; i++ ) {
 		
 		if ( recordingActive ) {
@@ -78,11 +86,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 			incrementPlayHead();
 		}
 		
-		out[L][i] = recL + (loopL * loopDecay);
-		out[R][i] = recR + (loopR * loopDecay);
-
-		
-		
+		out[L][i] = recL + loopL;
+		out[R][i] = recR + loopR;
 	}
 }
 
@@ -92,22 +97,38 @@ int main(void)
 	
 	hw.StartAudio(AudioCallback);
 	startRecording();
-	
+	System::Delay(4000);
+	stopRecording();
 	while(1) {
 		float pot = hw.adc.GetFloat(0);
-		if ( pot < 0.01 ) {
+		playSpeed = pot * 8 - 4;
+		bool ledState = false;
+
+		if ( playSpeed <= -3.95 ) {
+			playSpeed = -4.f;
+			ledState = true;
+		} else if ( playSpeed >= -2.05 && playSpeed <= -1.95 ) {
+			playSpeed = -2.f;
+			ledState = true;
+		} else if ( playSpeed >= -1.05 && playSpeed <= -0.95 ) {
+			playSpeed = -1.f;
+			ledState = true;
+		} else if ( playSpeed >= -0.05 && playSpeed <= 0.05 ) {
 			playSpeed = 0;
-		} else if ( pot < 0.2 ) {
-			playSpeed = 0.25;
-		} else if ( pot < 0.4 ) {
-			playSpeed = 0.5;
-		} else if ( pot < 0.6 ) {
-			playSpeed = 1;
-		} else if ( pot < 0.8 ) {
-			playSpeed = 2;
-		} else {
-			playSpeed = 4;
+			ledState = true;
+		} else if ( playSpeed >= 0.95 && playSpeed <= 1.05 ) {
+			playSpeed = 1.f;
+			ledState = true;
+		} else if ( playSpeed >= 1.95 && playSpeed <= 2.05 ) {
+			playSpeed = 2.f;
+			ledState = true;
+		} else if ( playSpeed >= 3.95) {
+			playSpeed = 4.f;
+			ledState = true;
 		}
+
+		led_speed_1.Write(ledState);
+
 
 		if ( reachedEnd ) {
 			flashLed();
@@ -129,9 +150,12 @@ void setup(void) {
 	#endif
 	
 	AdcChannelConfig adcConfig;
-	adcConfig.InitSingle(hw.GetPin(A0));
-    hw.adc.Init(&adcConfig, 1);
+	adcConfig.InitSingle(IN_SPEED_1);
+	hw.adc.Init(&adcConfig, 1);
     hw.adc.Start();
+	
+	led_speed_1.Init(LED_SPEED_1, GPIO::Mode::OUTPUT);
+
 
 	reset();
 	
@@ -164,11 +188,11 @@ float readFromBuffer(int ch) {
 	
 	float index = static_cast<float>((playIndex >> 4) + (playIndex & 0xf) / 16.0f);
 
-	int32_t     t     = static_cast<int>(index + playSpeedInt + BUFFER_SIZE);
-	const float xm1   = sBuffer[ch][(t - 1) % BUFFER_SIZE];
-	const float x0    = sBuffer[ch][(t) % BUFFER_SIZE];
-	const float x1    = sBuffer[ch][(t + 1) % BUFFER_SIZE];
-	const float x2    = sBuffer[ch][(t + 2) % BUFFER_SIZE];
+	int32_t     t     = static_cast<int>(index + playSpeedInt + loopLength);
+	const float xm1   = sBuffer[ch][(t - 1) % loopLength];
+	const float x0    = sBuffer[ch][(t) % loopLength];
+	const float x1    = sBuffer[ch][(t + 1) % loopLength];
+	const float x2    = sBuffer[ch][(t + 2) % loopLength];
 	const float c     = (x1 - xm1) * 0.5f;
 	const float v     = x0 - x1;
 	const float w     = c + v;
@@ -187,7 +211,7 @@ void incrementPlayHead() {
 		playIndex -= max;
 		reachedEnd = true;
 	}
-	playIndex %= (loopLength << 4);
+	//playIndex %= (loopLength << 4);
 }
 
 void startRecording() {
