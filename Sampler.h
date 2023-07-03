@@ -12,8 +12,10 @@ void stopRecording(void);
 
 void incrementPlayHead(void);
 
+bool determinePlaySpeed(void);
+
 void clearBuffer(void);
 float readFromBuffer(int);
 
 
-void flashLed(void);
+void flashLed(size_t);
