@@ -35,10 +35,12 @@ float playSpeed = 1.0f;
 uint32_t recordIndex = 0;
 uint32_t loopLength = 0;
 
+bool inputMonitoring = true;
+
 bool loopingActive  = false;
 bool recordingActive = false;
 
-float loopDecay = 1.0f;
+float loopDecay = 0.9f;
 
 Switch in_rec_1;
 GPIO led_speed_1;
@@ -50,24 +52,31 @@ bool ledState = true;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
 {
-	float recL = 0.0f,
-		  recR = 0.0f,
-		  loopL = 0.0f,
-		  loopR = 0.0f;
-	
 	for ( size_t i = 0; i < size; i++ ) {
+		float inL = 0.0f,
+		  inR = 0.0f,
+		  loopL = 0.0f,
+		  loopR = 0.0f,
+		  outL = 0.0f,
+		  outR = 0.0f;		
 		
-		if ( recordingActive ) {
-			recL = in[0][i];
-			recR = in[1][i];
+		if ( loopingActive ) {	
+			loopL = readFromBuffer(L);
+			loopR = readFromBuffer(R);
+			incrementPlayHead();
+		}
+		
+		inL = in[0][i];
+		inR = in[1][i];
 
-			sBuffer[L][recordIndex] = recL;
-			sBuffer[R][recordIndex] = recR;
+		if ( recordingActive ) {
+			
+			// Add our incoming sample to what's already in the buffer at the record head
+			sBuffer[L][recordIndex] = (sBuffer[L][recordIndex] * loopDecay) + inL;
+			sBuffer[R][recordIndex] = (sBuffer[R][recordIndex] * loopDecay) + inR;
 
 			recordIndex++;
-			recordIndex %= BUFFER_SIZE;
-			loopDecay = 0.9f;
-
+			
 			// If we're recording the first loop into the buffer, keep track of the length as we record
 			if ( ! loopingActive ) {
 				// And if we hit the end of the buffer, start looping, and cap our loopLength
@@ -76,17 +85,21 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 					stopRecording();
 					reachedEnd = true;
 				}
+			} else {
+				recordIndex %= loopLength;
 			}
 		}
 
-		if ( loopingActive ) {	
-			loopL = readFromBuffer(L);
-			loopR = readFromBuffer(R);
-			incrementPlayHead();
+		outL = loopL;
+		outR = loopR;
+
+		if ( inputMonitoring ) {
+			outL += inL;
+			outR += inR;
 		}
-		
-		out[L][i] = recL + loopL;
-		out[R][i] = recR + loopR;
+
+		out[L][i] = outL;
+		out[R][i] = outR;
 	}
 }
 
